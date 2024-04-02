@@ -49,7 +49,7 @@ enum class Error : size_t {
   kBaseAccelerationInvalidReading
 };
 
-const char* getErrorName(Error error) {
+const char *getErrorName(Error error) {
   switch (error) {
     case Error::kCartesianMotionGeneratorAccelerationDiscontinuity:
       return "cartesian_motion_generator_acceleration_discontinuity";
