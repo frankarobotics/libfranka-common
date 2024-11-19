@@ -117,10 +117,11 @@ struct DynamicSizedCommandMessage {
    *   includes header + payload.
    */
   auto serialize() -> std::vector<uint8_t> {
-    std::vector<uint8_t> buffer(header.size);
-    memcpy(buffer.data(), &header, sizeof(header));
+    const size_t sizeof_header = sizeof(CommandHeader);
+    std::vector<uint8_t> buffer(sizeof_header + payload.size());
+    memcpy(buffer.data(), &header, sizeof_header);
 
-    std::copy(payload.cbegin(), payload.cend(), buffer.data() + sizeof(header));
+    memcpy(buffer.data() + sizeof_header, payload.data(), payload.size());
 
     return buffer;
   }
