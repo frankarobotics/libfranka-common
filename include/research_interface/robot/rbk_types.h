@@ -51,16 +51,18 @@ struct RobotState {
     }
 
     // Constructor from std::array<double, N>
-    floatarray(const std::array<double, N>& arr) {
-        std::transform(arr.begin(), arr.end(), this->begin(),
-                       [](double val) { return static_cast<float>(val); });
+    floatarray(const std::array<double, N> &arr) {
+      std::transform(arr.begin(), arr.end(), this->begin(), [](double val) {
+        return static_cast<float>(val);
+      });
     }
 
     // Assignment operator from std::array<double, N>
-    floatarray& operator=(const std::array<double, N>& arr) {
-        std::transform(arr.begin(), arr.end(), this->begin(),
-                       [](double val) { return static_cast<float>(val); });
-        return *this;
+    floatarray &operator=(const std::array<double, N> &arr) {
+      std::transform(arr.begin(), arr.end(), this->begin(), [](double val) {
+        return static_cast<float>(val);
+      });
+      return *this;
     }
 
     // Conversion to std::array<double, N>
@@ -70,6 +72,12 @@ struct RobotState {
         return static_cast<double>(val);  // Convert float to double
       });
       return result;
+    }
+
+    // required for google test, which apparantly can't handle
+    // template-based derived types due to type resolution.
+    bool operator==(const floatarray<N> &other) const {
+      return std::equal(this->begin(), this->end(), other.begin());
     }
 
     // Index operator (accessor) for float
