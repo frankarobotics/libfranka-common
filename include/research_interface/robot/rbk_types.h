@@ -40,7 +40,7 @@ enum class RobotMode : uint8_t {
 struct RobotState {
   // Templated floatarray (Implicit Conversion Array) class
   // allows for the conversion of the array type float to double
-  // without the need for a separate class or rediculous amount of re-factoring
+  // without the need for significant re-factoring
   template <std::size_t N>
   class floatarray : public std::array<float, N> {
    public:
@@ -74,8 +74,8 @@ struct RobotState {
       return result;
     }
 
-    // required for google test, which apparantly can't handle
-    // template-based derived types due to type resolution.
+    // required to implement operator == because std::array<float, N> is a dependent base class
+    // base class operators are not inherited unless explicitly brought into scope
     bool operator==(const floatarray<N> &other) const {
       return std::equal(this->begin(), this->end(), other.begin());
     }
@@ -132,7 +132,6 @@ struct RobotState {
   RobotMode robot_mode;
   float control_command_success_rate;
 };
-;
 
 struct MotionGeneratorCommand {
   std::array<double, 7> q_c;
