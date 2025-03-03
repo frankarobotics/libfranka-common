@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Franka Emika GmbH
+// Copyright (c) 2024 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #pragma once
 
@@ -57,11 +57,11 @@ struct ResponseBase {
 template <typename T>
 struct CommandMessage {
   CommandMessage() = default;
-  CommandMessage(const CommandHeader& header, const T& instance) : header(header) {
+  CommandMessage(const CommandHeader &header, const T &instance) : header(header) {
     std::memcpy(payload.data(), &instance, payload.size());
   }
 
-  T getInstance() const noexcept { return *reinterpret_cast<const T*>(payload.data()); }
+  T getInstance() const noexcept { return *reinterpret_cast<const T *>(payload.data()); }
 
   CommandHeader header;
   std::array<uint8_t, sizeof(T)> payload;
@@ -70,7 +70,7 @@ struct CommandMessage {
 template <typename T>
 struct CommandMessage<RequestBase<T>> {
   CommandMessage() = default;
-  CommandMessage(const CommandHeader& header, const RequestBase<T>&) : header(header) {}
+  CommandMessage(const CommandHeader &header, const RequestBase<T> &) : header(header) {}
 
   RequestBase<T> getInstance() const noexcept { return RequestBase<T>(); }
 

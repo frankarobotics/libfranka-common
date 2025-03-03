@@ -1,11 +1,13 @@
-// Copyright (c) 2017 Franka Emika GmbH
+// Copyright (c) 2024 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #pragma once
 
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 namespace research_interface {
 namespace robot {
@@ -14,14 +16,13 @@ namespace robot {
 
 using Version = uint16_t;
 
-constexpr Version kVersion = 5;
+constexpr Version kVersion = 10;
 constexpr uint16_t kCommandPort = 1337;
 
 enum class Command : uint32_t {
   kConnect,
   kMove,
   kStopMove,
-  kGetCartesianLimit,
   kSetCollisionBehavior,
   kSetJointImpedance,
   kSetCartesianImpedance,
@@ -29,9 +30,9 @@ enum class Command : uint32_t {
   kSetEEToK,
   kSetNEToEE,
   kSetLoad,
-  kSetFilters,
   kAutomaticErrorRecovery,
-  kLoadModelLibrary
+  kLoadModelLibrary,
+  kGetRobotModel
 };
 
 struct CommandHeader {
@@ -63,11 +64,11 @@ struct ResponseBase {
 template <typename T>
 struct CommandMessage {
   CommandMessage() = default;
-  CommandMessage(const CommandHeader& header, const T& instance) : header(header) {
+  CommandMessage(const CommandHeader &header, const T &instance) : header(header) {
     std::memcpy(payload.data(), &instance, payload.size());
   }
 
-  T getInstance() const noexcept { return *reinterpret_cast<const T*>(payload.data()); }
+  T getInstance() const noexcept { return *reinterpret_cast<const T *>(payload.data()); }
 
   CommandHeader header;
   std::array<uint8_t, sizeof(T)> payload;
@@ -76,11 +77,73 @@ struct CommandMessage {
 template <typename T>
 struct CommandMessage<RequestBase<T>> {
   CommandMessage() = default;
-  CommandMessage(const CommandHeader& header, const RequestBase<T>&) : header(header) {}
+  CommandMessage(const CommandHeader &header, const RequestBase<T> &) : header(header) {}
 
   RequestBase<T> getInstance() const noexcept { return RequestBase<T>(); }
 
   CommandHeader header;
+};
+
+/**
+ * A CommandMessage which can contain dynamically sized data
+ *
+ * @tparam T The type of the carried message
+ */
+template <typename T>
+struct DynamicSizedCommandMessage {
+ public:
+  DynamicSizedCommandMessage() = default;
+
+  /**
+   * Constructs the message with a header containing the message information (type, size, ...) and
+   * the carried data
+   *
+   * @param header The header of the message. Important: The size will be derived within the
+   *   constructor!
+   * @param instance The to-be carried data
+   */
+  DynamicSizedCommandMessage(const CommandHeader &header, const T &instance) : header(header) {
+    payload = instance.serialize();
+    this->header.size = sizeof(header) + payload.size();
+  }
+
+  /**
+   * @return T Returns the carried data as its original type
+   */
+  T getInstance() const noexcept { return T::deserialize(payload); }
+
+  /**
+   * @return std::vector<uint8_t> Serializes the contained message data into a byte vector. This
+   *   includes header + payload.
+   */
+  auto serialize() -> std::vector<uint8_t> {
+    const size_t sizeof_header = sizeof(CommandHeader);
+    std::vector<uint8_t> buffer(sizeof_header + payload.size());
+    memcpy(buffer.data(), &header, sizeof_header);
+
+    memcpy(buffer.data() + sizeof_header, payload.data(), payload.size());
+
+    return buffer;
+  }
+
+  /**
+   * Constructs the Message from a buffer containing all necessary information
+   *
+   * @param buffer The byte vector containing all data
+   * @return DynamicSizedCommandMessage<T> The constructed message carrying the received data
+   */
+  static auto deserialize(const std::vector<uint8_t> &buffer) -> DynamicSizedCommandMessage<T> {
+    DynamicSizedCommandMessage<T> command_message;
+    memcpy(&command_message.header, buffer.data(), sizeof(header));
+
+    command_message.payload = std::vector<uint8_t>(buffer.cbegin() + sizeof(header), buffer.cend());
+
+    return command_message;
+  }
+
+ public:
+  CommandHeader header;
+  std::vector<uint8_t> payload;
 };
 
 template <typename T, Command C>
@@ -89,7 +152,11 @@ struct CommandBase {
 
   static constexpr Command kCommand = C;
 
-  enum class Status : uint8_t { kSuccess, kCommandNotPossibleRejected };
+  enum class Status : uint8_t {
+    kSuccess,
+    kCommandNotPossibleRejected,
+    kCommandRejectedDueToActivatedSafetyFunctions
+  };
 
   using Header = CommandHeader;
   using Request = RequestBase<T>;
@@ -100,7 +167,12 @@ struct CommandBase {
 
 template <typename T, Command C>
 struct GetterSetterCommandBase : CommandBase<T, C> {
-  enum class Status : uint8_t { kSuccess, kCommandNotPossibleRejected, kInvalidArgumentRejected };
+  enum class Status : uint8_t {
+    kSuccess,
+    kCommandNotPossibleRejected,
+    kInvalidArgumentRejected,
+    kCommandRejectedDueToActivatedSafetyFunctions
+  };
 };
 
 struct Connect : CommandBase<Connect, Command::kConnect> {
@@ -131,13 +203,16 @@ struct Move : public CommandBase<Move, Command::kMove> {
     kJointPosition,
     kJointVelocity,
     kCartesianPosition,
-    kCartesianVelocity
+    kCartesianVelocity,
+    kNone
   };
 
   enum class Status : uint8_t {
     kSuccess,
     kMotionStarted,
     kPreempted,
+    kPreemptedDueToActivatedSafetyFunctions,
+    kCommandRejectedDueToActivatedSafetyFunctions,
     kCommandNotPossibleRejected,
     kStartAtSingularPoseRejected,
     kInvalidArgumentRejected,
@@ -158,8 +233,8 @@ struct Move : public CommandBase<Move, Command::kMove> {
   struct Request : public RequestBase<Move> {
     Request(ControllerMode controller_mode,
             MotionGeneratorMode motion_generator_mode,
-            const Deviation& maximum_path_deviation,
-            const Deviation& maximum_goal_pose_deviation)
+            const Deviation &maximum_path_deviation,
+            const Deviation &maximum_goal_pose_deviation)
         : controller_mode(controller_mode),
           motion_generator_mode(motion_generator_mode),
           maximum_path_deviation(maximum_path_deviation),
@@ -172,52 +247,96 @@ struct Move : public CommandBase<Move, Command::kMove> {
   };
 };
 
+/**
+ * The GetRobotModel contains the request and response to receive the robot model
+ */
+struct GetRobotModel : public CommandBase<GetRobotModel, Command::kGetRobotModel> {
+  /**
+   * The empty request sent for receiving back the robot model.
+   */
+  struct Request : public RequestBase<GetRobotModel> {
+    auto serialize() const -> std::vector<uint8_t> { return std::vector<uint8_t>(); }
+    static auto deserialize(const std::vector<uint8_t> & /*buffer */) -> Request {
+      return Request();
+    }
+  };
+
+  /**
+   * The response carries the robot model
+   */
+  struct Response : public ResponseBase<GetRobotModel> {
+   public:
+    /**
+     * Default constructor for an empty returned model
+     *
+     * @param status The status of the request
+     */
+    Response(Status status) : ResponseBase<GetRobotModel>(status), robot_model() {}
+
+    /**
+     * Constructs the response with the given status and robot model
+     *
+     * @param status The status of the request
+     * @param robot_model The returned robot model
+     */
+    Response(Status status, const std::string &robot_model)
+        : ResponseBase<GetRobotModel>(status), robot_model(robot_model) {}
+
+    /**
+     * @return std::vector<uint8_t> Returns the serialized data as byte vector
+     */
+    auto serialize() const -> std::vector<uint8_t> {
+      std::vector<uint8_t> buffer(sizeof(status) + robot_model.size());
+      memcpy(buffer.data(), &status, sizeof(status));
+
+      std::copy(robot_model.cbegin(), robot_model.cend(), buffer.begin() + sizeof(status));
+
+      return buffer;
+    }
+
+    /**
+     * Constructs a GetRobotModel from the received buffer
+     *
+     * @param buffer The buffer containing the data
+     * @return Response The constructed GetRobotModel
+     */
+    static auto deserialize(const std::vector<uint8_t> &buffer) -> Response {
+      Status status;
+      memcpy(&status, buffer.data(), sizeof(status));
+
+      return Response(status, std::string(buffer.cbegin() + sizeof(Status), buffer.cend()));
+    }
+
+   public:
+    std::string robot_model;
+  };
+
+  template <typename P>
+  using Message = DynamicSizedCommandMessage<P>;
+};
+
 struct StopMove : public CommandBase<StopMove, Command::kStopMove> {
   enum class Status : uint8_t {
     kSuccess,
     kCommandNotPossibleRejected,
+    kCommandRejectedDueToActivatedSafetyFunctions,
     kEmergencyAborted,
     kReflexAborted,
     kAborted
   };
 };
 
-struct GetCartesianLimit
-    : public GetterSetterCommandBase<GetCartesianLimit, Command::kGetCartesianLimit> {
-  struct Request : public RequestBase<GetCartesianLimit> {
-    Request(int32_t id) : id(id) {}
-
-    const int32_t id;
-  };
-
-  struct Response : public ResponseBase<GetCartesianLimit> {
-    Response(Status status,
-             const std::array<double, 3>& object_world_size,
-             const std::array<double, 16>& object_frame,
-             bool object_activation)
-        : ResponseBase(status),
-          object_world_size(object_world_size),
-          object_frame(object_frame),
-          object_activation(object_activation) {}
-    Response(Status status) : Response(status, {}, {}, false) {}
-
-    const std::array<double, 3> object_world_size;
-    const std::array<double, 16> object_frame;
-    const bool object_activation;
-  };
-};
-
 struct SetCollisionBehavior
     : public GetterSetterCommandBase<SetCollisionBehavior, Command::kSetCollisionBehavior> {
   struct Request : public RequestBase<SetCollisionBehavior> {
-    Request(const std::array<double, 7>& lower_torque_thresholds_acceleration,
-            const std::array<double, 7>& upper_torque_thresholds_acceleration,
-            const std::array<double, 7>& lower_torque_thresholds_nominal,
-            const std::array<double, 7>& upper_torque_thresholds_nominal,
-            const std::array<double, 6>& lower_force_thresholds_acceleration,
-            const std::array<double, 6>& upper_force_thresholds_acceleration,
-            const std::array<double, 6>& lower_force_thresholds_nominal,
-            const std::array<double, 6>& upper_force_thresholds_nominal)
+    Request(const std::array<double, 7> &lower_torque_thresholds_acceleration,
+            const std::array<double, 7> &upper_torque_thresholds_acceleration,
+            const std::array<double, 7> &lower_torque_thresholds_nominal,
+            const std::array<double, 7> &upper_torque_thresholds_nominal,
+            const std::array<double, 6> &lower_force_thresholds_acceleration,
+            const std::array<double, 6> &upper_force_thresholds_acceleration,
+            const std::array<double, 6> &lower_force_thresholds_nominal,
+            const std::array<double, 6> &upper_force_thresholds_nominal)
         : lower_torque_thresholds_acceleration(lower_torque_thresholds_acceleration),
           upper_torque_thresholds_acceleration(upper_torque_thresholds_acceleration),
           lower_torque_thresholds_nominal(lower_torque_thresholds_nominal),
@@ -244,7 +363,7 @@ struct SetCollisionBehavior
 struct SetJointImpedance
     : public GetterSetterCommandBase<SetJointImpedance, Command::kSetJointImpedance> {
   struct Request : public RequestBase<SetJointImpedance> {
-    Request(const std::array<double, 7>& K_theta) : K_theta(K_theta) {}
+    Request(const std::array<double, 7> &K_theta) : K_theta(K_theta) {}
 
     const std::array<double, 7> K_theta;
   };
@@ -253,7 +372,7 @@ struct SetJointImpedance
 struct SetCartesianImpedance
     : public GetterSetterCommandBase<SetCartesianImpedance, Command::kSetCartesianImpedance> {
   struct Request : public RequestBase<SetCartesianImpedance> {
-    Request(const std::array<double, 6>& K_x) : K_x(K_x) {}
+    Request(const std::array<double, 6> &K_x) : K_x(K_x) {}
 
     const std::array<double, 6> K_x;
   };
@@ -261,7 +380,7 @@ struct SetCartesianImpedance
 
 struct SetGuidingMode : public GetterSetterCommandBase<SetGuidingMode, Command::kSetGuidingMode> {
   struct Request : public RequestBase<SetGuidingMode> {
-    Request(const std::array<bool, 6>& guiding_mode, bool nullspace)
+    Request(const std::array<bool, 6> &guiding_mode, bool nullspace)
         : guiding_mode(guiding_mode), nullspace(nullspace) {}
 
     const std::array<bool, 6> guiding_mode;
@@ -271,7 +390,7 @@ struct SetGuidingMode : public GetterSetterCommandBase<SetGuidingMode, Command::
 
 struct SetEEToK : public GetterSetterCommandBase<SetEEToK, Command::kSetEEToK> {
   struct Request : public RequestBase<SetEEToK> {
-    Request(const std::array<double, 16>& EE_T_K) : EE_T_K(EE_T_K) {}
+    Request(const std::array<double, 16> &EE_T_K) : EE_T_K(EE_T_K) {}
 
     const std::array<double, 16> EE_T_K;
   };
@@ -279,7 +398,7 @@ struct SetEEToK : public GetterSetterCommandBase<SetEEToK, Command::kSetEEToK> {
 
 struct SetNEToEE : public GetterSetterCommandBase<SetNEToEE, Command::kSetNEToEE> {
   struct Request : public RequestBase<SetNEToEE> {
-    Request(const std::array<double, 16>& NE_T_EE) : NE_T_EE(NE_T_EE) {}
+    Request(const std::array<double, 16> &NE_T_EE) : NE_T_EE(NE_T_EE) {}
 
     const std::array<double, 16> NE_T_EE;
   };
@@ -288,8 +407,8 @@ struct SetNEToEE : public GetterSetterCommandBase<SetNEToEE, Command::kSetNEToEE
 struct SetLoad : public GetterSetterCommandBase<SetLoad, Command::kSetLoad> {
   struct Request : public RequestBase<SetLoad> {
     Request(double m_load,
-            const std::array<double, 3>& F_x_Cload,
-            const std::array<double, 9>& I_load)
+            const std::array<double, 3> &F_x_Cload,
+            const std::array<double, 9> &I_load)
         : m_load(m_load), F_x_Cload(F_x_Cload), I_load(I_load) {}
 
     const double m_load;
@@ -298,32 +417,12 @@ struct SetLoad : public GetterSetterCommandBase<SetLoad, Command::kSetLoad> {
   };
 };
 
-struct SetFilters : public GetterSetterCommandBase<SetFilters, Command::kSetFilters> {
-  struct Request : public RequestBase<SetFilters> {
-    Request(double joint_position_filter_frequency,
-            double joint_velocity_filter_frequency,
-            double cartesian_position_filter_frequency,
-            double cartesian_velocity_filter_frequency,
-            double controller_filter_frequency)
-        : joint_position_filter_frequency(joint_position_filter_frequency),
-          joint_velocity_filter_frequency(joint_velocity_filter_frequency),
-          cartesian_position_filter_frequency(cartesian_position_filter_frequency),
-          cartesian_velocity_filter_frequency(cartesian_velocity_filter_frequency),
-          controller_filter_frequency(controller_filter_frequency) {}
-
-    const double joint_position_filter_frequency;
-    const double joint_velocity_filter_frequency;
-    const double cartesian_position_filter_frequency;
-    const double cartesian_velocity_filter_frequency;
-    const double controller_filter_frequency;
-  };
-};
-
 struct AutomaticErrorRecovery
     : public CommandBase<AutomaticErrorRecovery, Command::kAutomaticErrorRecovery> {
   enum class Status : uint8_t {
     kSuccess,
     kCommandNotPossibleRejected,
+    kCommandRejectedDueToActivatedSafetyFunctions,
     kManualErrorRecoveryRequiredRejected,
     kReflexAborted,
     kEmergencyAborted,

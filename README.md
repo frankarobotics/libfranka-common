@@ -1,6 +1,6 @@
 # libfranka-common
 
-Types and definitions common to [`libfranka`][api-docs] and the [Franka Control Interface (FCI)][fci-docs] of Franka Emika research robots.
+Types and definitions common to [`libfranka`][api-docs] and the [Franka Control Interface (FCI)][fci-docs] of Franka Robotics research robots.
 
 ## License
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 Franka Emika GmbH
+// Copyright (c) 2024 Franka Robotics GmbH
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #pragma once
 
@@ -49,7 +49,7 @@ enum class Error : size_t {
   kBaseAccelerationInvalidReading
 };
 
-const char* getErrorName(Error error) {
+const char *getErrorName(Error error) {
   switch (error) {
     case Error::kCartesianMotionGeneratorAccelerationDiscontinuity:
       return "cartesian_motion_generator_acceleration_discontinuity";
