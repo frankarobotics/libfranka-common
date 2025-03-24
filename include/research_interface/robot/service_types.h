@@ -31,7 +31,6 @@ enum class Command : uint32_t {
   kSetNEToEE,
   kSetLoad,
   kAutomaticErrorRecovery,
-  kLoadModelLibrary,
   kGetRobotModel
 };
 
@@ -427,22 +426,6 @@ struct AutomaticErrorRecovery
     kReflexAborted,
     kEmergencyAborted,
     kAborted
-  };
-};
-
-struct LoadModelLibrary : public CommandBase<LoadModelLibrary, Command::kLoadModelLibrary> {
-  enum class Status : uint8_t { kSuccess, kError };
-
-  enum class Architecture : uint8_t { kX64, kX86, kARM, kARM64 };
-
-  enum class System : uint8_t { kLinux, kWindows };
-
-  struct Request : public RequestBase<LoadModelLibrary> {
-    Request(Architecture architecture, System system)
-        : architecture(architecture), system(system) {}
-
-    const Architecture architecture;
-    const System system;
   };
 };
 
