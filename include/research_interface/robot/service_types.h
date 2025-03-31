@@ -120,7 +120,9 @@ struct DynamicSizedCommandMessage {
     std::vector<uint8_t> buffer(sizeof_header + payload.size());
     memcpy(buffer.data(), &header, sizeof_header);
 
-    memcpy(buffer.data() + sizeof_header, payload.data(), payload.size());
+    if (payload.size() > 0) {
+      memcpy(buffer.data() + sizeof_header, payload.data(), payload.size());
+    }
 
     return buffer;
   }
