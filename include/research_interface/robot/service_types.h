@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -16,7 +18,7 @@ namespace robot {
 
 using Version = uint16_t;
 
-constexpr Version kVersion = 10;
+constexpr Version kVersion = 11;
 constexpr uint16_t kCommandPort = 1337;
 
 enum class Command : uint32_t {
@@ -235,16 +237,35 @@ struct Move : public CommandBase<Move, Command::kMove> {
     Request(ControllerMode controller_mode,
             MotionGeneratorMode motion_generator_mode,
             const Deviation &maximum_path_deviation,
-            const Deviation &maximum_goal_pose_deviation)
+            const Deviation &maximum_goal_pose_deviation,
+            bool use_async_motion_generator = false,
+            const std::optional<std::vector<double>> &maximum_velocity = std::nullopt)
         : controller_mode(controller_mode),
           motion_generator_mode(motion_generator_mode),
           maximum_path_deviation(maximum_path_deviation),
-          maximum_goal_pose_deviation(maximum_goal_pose_deviation) {}
+          maximum_goal_pose_deviation(maximum_goal_pose_deviation),
+          use_async_motion_generator(use_async_motion_generator) {
+      if (use_async_motion_generator && maximum_velocity.has_value()) {
+        if (this->maximum_velocity.size() > maximum_velocity->size()) {
+          throw std::invalid_argument("libfranka: Invalid size of maximum velocities vector.");
+        }
+
+        std::copy(
+            maximum_velocity->cbegin(), maximum_velocity->cend(), this->maximum_velocity.begin());
+      } else if (use_async_motion_generator) {
+        throw std::invalid_argument(
+            "libfranka: Maximum velocities must be provided for variable rate.");
+      }
+    }
 
     const ControllerMode controller_mode;
     const MotionGeneratorMode motion_generator_mode;
     const Deviation maximum_path_deviation;
     const Deviation maximum_goal_pose_deviation;
+
+    // Async motion generator
+    bool use_async_motion_generator;
+    std::array<double, 7> maximum_velocity{};
   };
 };
 
