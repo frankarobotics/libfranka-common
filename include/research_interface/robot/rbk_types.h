@@ -125,12 +125,8 @@ struct RobotState {
   floatarray<6> O_ddP_EE_c;
   floatarray<7> theta;
   floatarray<7> dtheta;
-  floatarray<7> accelerometer_top_x;
-  floatarray<7> accelerometer_top_y;
-  floatarray<7> accelerometer_top_z;
-  floatarray<7> accelerometer_bottom_x;
-  floatarray<7> accelerometer_bottom_y;
-  floatarray<7> accelerometer_bottom_z;
+  std::array<std::array<float, 3>, 6> accelerometer_top;
+  std::array<std::array<float, 3>, 6> accelerometer_bottom;
   MotionGeneratorMode motion_generator_mode;
   ControllerMode controller_mode;
   std::array<bool, 41> errors;
